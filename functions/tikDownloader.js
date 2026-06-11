@@ -1,8 +1,8 @@
 // tikDownloader.js
-// TikTok Video Downloader using your own API
+// TikTok Video Downloader - Original Logic
 
 import { sendMessage, sendVideo } from './telegramApiHelpers.js';
-import { TIK_API_BASE, PARSE_MODE } from './constants.js';
+import { TIKTOK_API_BASE, PARSE_MODE } from './constants.js';
 
 function escapeHTML(text = '') {
     if (!text) return '';
@@ -32,7 +32,7 @@ export async function handleTikTokCommand(message, token, env) {
         const statusMsg = await sendMessage(token, chatId, "<b>🔍 Processing TikTok...</b>", PARSE_MODE);
         const statusId = statusMsg.result?.message_id;
         
-        const apiUrl = `${TIK_API_BASE}${encodeURIComponent(url)}`;
+        const apiUrl = `${TIKTOK_API_BASE}${encodeURIComponent(url)}`;
         const response = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
         const data = await response.json();
         
