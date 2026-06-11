@@ -30,47 +30,94 @@ export async function onRequest(context) {
     const { request, env } = context;
     const token = env.TELEGRAM_BOT_TOKEN;
     const BOT_KEY = env.BOT_DATA;
+    const url = new URL(request.url);
     
-    console.log(`[onRequest] Received ${request.method} ${request.url}`);
+    console.log(`[onRequest] Received ${request.method} ${url.pathname}`);
     
-    // Handle webhook registration
-    if (request.method === "GET" && request.url.includes("/registerWebhook")) {
-        const webhookUrl = request.url.replace("/registerWebhook", "");
+    // ================================================================
+    // ✅ Webhook Registration Route
+    // ================================================================
+    if (request.method === "GET" && url.pathname === "/registerWebhook") {
+        const webhookUrl = `https://${url.hostname}/`;
         const setWebhookUrl = `${TELEGRAM_API}${token}/setWebhook`;
+        
+        console.log(`[onRequest] Registering webhook to: ${webhookUrl}`);
         
         try {
             const response = await fetch(setWebhookUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "X-Bot-Key": BOT_KEY },
-                body: JSON.stringify({ url: webhookUrl, allowed_updates: ["message"] })
+                headers: { 
+                    "Content-Type": "application/json",
+                    "X-Bot-Key": BOT_KEY 
+                },
+                body: JSON.stringify({ 
+                    url: webhookUrl, 
+                    allowed_updates: ["message"] 
+                })
+            });
+            const result = await response.json();
+            console.log("[onRequest] Webhook response:", result);
+            
+            if (result.ok) {
+                // Set bot commands after webhook registration
+                const commands = BOT_COMMANDS.map(cmd => {
+                    let description = "";
+                    switch(cmd) {
+                        case '/start': description = 'Start the bot'; break;
+                        case '/fb': description = 'Download Facebook video'; break;
+                        case '/fbdl': description = 'Download Facebook video'; break;
+                        case '/tik': description = 'Download TikTok video'; break;
+                        case '/tiktok': description = 'Download TikTok video'; break;
+                        case '/yt': description = 'Download YouTube video'; break;
+                        case '/youtube': description = 'Download YouTube video'; break;
+                        case '/song': description = 'Download YouTube audio'; break;
+                        case '/audio': description = 'Download YouTube audio'; break;
+                        case '/tx': description = 'Download Twitter/X video'; break;
+                        default: description = 'Download media';
+                    }
+                    return { command: cmd.substring(1), description: description };
+                });
+                await setMyCommands(token, commands, BOT_KEY);
+                return new Response(`✅ Webhook registered successfully to: ${webhookUrl}`, { status: 200 });
+            } else {
+                return new Response(`❌ Webhook registration failed: ${result.description}`, { status: 500 });
+            }
+        } catch (error) {
+            console.error("[onRequest] Webhook error:", error);
+            return new Response(`❌ Error: ${error.message}`, { status: 500 });
+        }
+    }
+    
+    // ================================================================
+    // ✅ Webhook Unregistration Route
+    // ================================================================
+    if (request.method === "GET" && url.pathname === "/unregisterWebhook") {
+        const deleteWebhookUrl = `${TELEGRAM_API}${token}/deleteWebhook`;
+        
+        try {
+            const response = await fetch(deleteWebhookUrl, {
+                method: "POST",
+                headers: { "X-Bot-Key": BOT_KEY }
             });
             const result = await response.json();
             
             if (result.ok) {
-                // Set bot commands after webhook registration
-                const commands = BOT_COMMANDS.map(cmd => ({ 
-                    command: cmd.substring(1), 
-                    description: cmd === '/start' ? 'Start the bot' :
-                                 cmd === '/fb' || cmd === '/fbdl' ? 'Download Facebook video' :
-                                 cmd === '/tik' || cmd === '/tiktok' ? 'Download TikTok video' :
-                                 cmd === '/yt' || cmd === '/youtube' ? 'Download YouTube video' :
-                                 cmd === '/song' || cmd === '/audio' ? 'Download YouTube audio' :
-                                 'Download Twitter/X video'
-                }));
-                await setMyCommands(token, commands, BOT_KEY);
+                return new Response(`✅ Webhook unregistered successfully`, { status: 200 });
+            } else {
+                return new Response(`❌ Webhook unregistration failed: ${result.description}`, { status: 500 });
             }
-            
-            return new Response(`Webhook registered: ${result.ok}`, { status: 200 });
         } catch (error) {
-            return new Response(`Error: ${error.message}`, { status: 500 });
+            return new Response(`❌ Error: ${error.message}`, { status: 500 });
         }
     }
     
-    // Handle POST requests (Telegram webhook)
+    // ================================================================
+    // ✅ Main Telegram Webhook Handler (POST requests)
+    // ================================================================
     if (request.method === "POST") {
         try {
             const update = await request.json();
-            console.log("[onRequest] Update:", JSON.stringify(update));
+            console.log("[onRequest] Update received:", JSON.stringify(update));
             
             if (!update.message) {
                 return new Response("OK", { status: 200 });
@@ -87,7 +134,6 @@ export async function onRequest(context) {
             const command = text.split(' ')[0].toLowerCase();
             console.log(`[onRequest] Command: ${command}`);
             
-            // Route commands to handlers
             switch (command) {
                 case '/start':
                     await handleStartCommand(message, token, BOT_KEY);
@@ -126,5 +172,8 @@ export async function onRequest(context) {
         }
     }
     
-    return new Response("Download Bot is running!", { status: 200 });
+    // ================================================================
+    // ✅ Default Response for other requests
+    // ================================================================
+    return new Response("Download Bot is running! Use /registerWebhook to set up webhook.", { status: 200 });
 }
