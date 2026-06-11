@@ -1,13 +1,12 @@
 // _middleware.js
 // Download Bot Only - Facebook, TikTok, YouTube, Twitter/X
-// Cloudflare Pages Functions entry point
 
-import { TELEGRAM_API, BOT_TOKEN, PARSE_MODE } from './api/constants.js';
-import { sendMessage } from './api/telegramApiHelpers.js';
-import { handleFBCommand } from './api/fbDownloader.js';
-import { handleTikTokCommand } from './api/tikDownloader.js';
-import { handleYTCommand, handleSongCommand } from './api/ytDownloader.js';
-import { handleTXCommand } from './api/txDownloader.js';
+import { TELEGRAM_API, BOT_TOKEN, PARSE_MODE } from './constants.js';
+import { sendMessage } from './telegramApiHelpers.js';
+import { handleFBCommand } from './fbDownloader.js';
+import { handleTikTokCommand } from './tikDownloader.js';
+import { handleYTCommand, handleSongCommand } from './ytDownloader.js';
+import { handleTXCommand } from './txDownloader.js';
 
 export async function onRequest(context) {
     const { request, env } = context;
@@ -24,7 +23,6 @@ export async function onRequest(context) {
         }
     }
     
-    // Webhook registration helper
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname.endsWith("/registerWebhook")) {
         const pagesUrl = url.origin + url.pathname.replace("/registerWebhook", "/");
@@ -43,7 +41,6 @@ export async function onRequest(context) {
         }
     }
     
-    // Handle webhook POST from Telegram
     if (request.method === "POST") {
         try {
             const update = requestBody;
@@ -51,21 +48,17 @@ export async function onRequest(context) {
                 return new Response("OK", { status: 200 });
             }
             
-            // Handle message
             if (update.message) {
                 const message = update.message;
                 const text = message.text || '';
                 
-                // Ignore non-text messages
                 if (!text) return new Response("OK", { status: 200 });
                 
                 const command = text.split(' ')[0].toLowerCase();
                 const chatId = message.chat.id;
-                const userId = message.from?.id;
                 
-                console.log(`[onRequest] Command: ${command} from ${userId} in ${chatId}`);
+                console.log(`[onRequest] Command: ${command}`);
                 
-                // Route to appropriate downloader
                 switch(command) {
                     case '/fb':
                     case '/fbdl':
@@ -95,10 +88,9 @@ export async function onRequest(context) {
                             "/yt &lt;url&gt; - YouTube Video\n" +
                             "/song &lt;name&gt; - YouTube Audio\n" +
                             "/tx &lt;url&gt; - Twitter/X Video",
-                            PARSE_MODE, null);
+                            PARSE_MODE);
                         break;
                     default:
-                        // Ignore unknown commands
                         break;
                 }
             }
