@@ -1,5 +1,5 @@
 // fbDownloader.js
-// Facebook Video Downloader with R2 Storage
+// Facebook Video Downloader with R2 Storage - Multiple API Format Support
 
 import { sendMessage } from './telegramApiHelpers';
 
@@ -82,6 +82,7 @@ async function deleteFromR2(fileName, env) {
     try { await env.MY_BUCKET.delete(fileName); } catch(e) {}
 }
 
+// ✅ အဓိက function - API response အမျိုးမျိုးကို support ဖြစ်အောင် ပြင်ထားတယ်
 export async function handleFBCommand(message, token, env, botKeyValue) {
     const chatId = message.chat.id;
     const userId = message.from.id;
@@ -112,28 +113,71 @@ export async function handleFBCommand(message, token, env, botKeyValue) {
         statusMsgId = statusResult.result?.message_id;
         
         const apiUrl = `${FB_API_BASE}${encodeURIComponent(url)}`;
+        console.log(`[handleFBCommand] API URL: ${apiUrl}`);
+        
         const response = await fetch(apiUrl, {
             headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
             signal: AbortSignal.timeout(30000)
         });
         const data = await response.json();
+        console.log(`[handleFBCommand] API Response:`, JSON.stringify(data));
         
-        let videoUrl = null, title = "Facebook Video", thumb = null;
+        let videoUrl = null;
+        let title = "Facebook Video";
+        let thumb = null;
         
-        if (data.success && data.data) {
-            videoUrl = data.data.video_url || data.data.download_url;
+        // ✅ Format 1: { success: true, data: { video_url, title, thumbnail } }
+        if (data.success === true && data.data) {
+            videoUrl = data.data.video_url || data.data.download_url || data.data.url;
             title = data.data.title || "Facebook Video";
-            thumb = data.data.thumbnail;
-        } else if (data.links?.length > 0) {
-            const videoObj = data.links.find(l => l.quality === "HD") || data.links[0];
+            thumb = data.data.thumbnail || data.data.thumb;
+        }
+        // ✅ Format 2: { success: true, video_url, title, thumbnail }
+        else if (data.success === true && data.video_url) {
+            videoUrl = data.video_url;
+            title = data.title || "Facebook Video";
+            thumb = data.thumbnail;
+        }
+        // ✅ Format 3: { result: { video_url, title, thumbnail } }
+        else if (data.result && data.result.video_url) {
+            videoUrl = data.result.video_url;
+            title = data.result.title || "Facebook Video";
+            thumb = data.result.thumbnail;
+        }
+        // ✅ Format 4: { links: [{ url, quality }] } (old API format)
+        else if (data.links && data.links.length > 0) {
+            const videoObj = data.links.find(l => l.quality === "HD") || 
+                             data.links.find(l => l.quality === "video+audio") || 
+                             data.links[0];
             videoUrl = videoObj.url;
             title = data.title || "Facebook Video";
             thumb = data.thumbnail;
-        } else {
-            throw new Error("No video found");
+        }
+        // ✅ Format 5: { video_url } directly
+        else if (data.video_url) {
+            videoUrl = data.video_url;
+            title = data.title || "Facebook Video";
+            thumb = data.thumbnail;
+        }
+        // ✅ Format 6: { download_url } directly
+        else if (data.download_url) {
+            videoUrl = data.download_url;
+            title = data.title || "Facebook Video";
+            thumb = data.thumbnail;
+        }
+        // ✅ Format 7: { url } directly
+        else if (data.url) {
+            videoUrl = data.url;
+            title = data.title || "Facebook Video";
+            thumb = data.thumbnail;
         }
         
-        if (!videoUrl) throw new Error("Could not extract video URL");
+        if (!videoUrl) {
+            console.error("[handleFBCommand] Could not extract video URL from response");
+            throw new Error("No video URL found in API response");
+        }
+        
+        console.log(`[handleFBCommand] Extracted video URL: ${videoUrl.substring(0, 100)}...`);
         
         await tgRequest(token, 'editMessageText', {
             chat_id: chatId, message_id: statusMsgId,
@@ -169,9 +213,11 @@ export async function handleFBCommand(message, token, env, botKeyValue) {
         if (statusMsgId) {
             await tgRequest(token, 'editMessageText', {
                 chat_id: chatId, message_id: statusMsgId,
-                text: `<b>❌ ${escapeHTML(error.message)}</b>`,
+                text: `<b>❌ Error: ${escapeHTML(error.message)}</b>\n\nPlease check the link and try again.`,
                 parse_mode: PARSE_MODE
             }, botKeyValue);
+        } else {
+            await sendMessage(token, chatId, `<b>❌ Error: ${escapeHTML(error.message)}</b>`, PARSE_MODE, null, botKeyValue);
         }
     } finally {
         await deleteFromR2(r2FileName, env);
