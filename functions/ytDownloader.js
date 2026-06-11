@@ -1,8 +1,8 @@
 // ytDownloader.js
-// YouTube Video & Audio Downloader using your own API
+// YouTube Video & Audio Downloader - Original Logic
 
 import { sendMessage, sendVideo, sendAudio } from './telegramApiHelpers.js';
-import { YT_API_BASE, YT_SEARCH_API_BASE, PARSE_MODE } from './constants.js';
+import { YT_API_URL, YT_SEARCH_API_URL, PARSE_MODE } from './constants.js';
 
 function escapeHTML(text = '') {
     if (!text) return '';
@@ -10,20 +10,45 @@ function escapeHTML(text = '') {
 }
 
 async function searchYouTube(query) {
-    const searchUrl = `${YT_SEARCH_API_BASE}${encodeURIComponent(query)}`;
+    const searchUrl = `${YT_SEARCH_API_URL}?action=search&query=${encodeURIComponent(query)}&limit=1`;
     const response = await fetch(searchUrl, { signal: AbortSignal.timeout(30000) });
     const data = await response.json();
     
-    if (!data.search_results || data.search_results.length === 0) {
+    if (!data.success || !data.data.length) {
         throw new Error("No results found");
     }
-    return data.search_results[0];
+    return data.data[0];
 }
 
-async function getVideoInfo(url) {
-    const apiUrl = `${YT_API_BASE}${encodeURIComponent(url)}`;
-    const response = await fetch(apiUrl, { signal: AbortSignal.timeout(30000) });
-    return await response.json();
+async function getYouTubeDownloadInfo(url) {
+    const downloadUrl = `${YT_API_URL}?url=${encodeURIComponent(url)}`;
+    const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(30000) });
+    const data = await response.json();
+    
+    if (!data.success) throw new Error(data.error || "Could not extract video data");
+    
+    const apiData = data.raw_response?.api || data;
+    const mediaItems = apiData.mediaItems || [];
+    
+    let videoUrl = null;
+    let audioUrl = null;
+    
+    for (const item of mediaItems) {
+        if (item.type === 'Video' && !videoUrl) {
+            videoUrl = item.mediaPreviewUrl || item.mediaUrl;
+        }
+        if (item.type === 'Audio' && !audioUrl) {
+            audioUrl = item.mediaPreviewUrl || item.mediaUrl;
+        }
+    }
+    
+    return {
+        title: apiData.title || "YouTube Video",
+        channel: apiData.userInfo?.name || "Unknown",
+        views: apiData.mediaStats?.viewsCount || "N/A",
+        videoUrl: videoUrl,
+        audioUrl: audioUrl
+    };
 }
 
 export async function handleYTCommand(message, token, env) {
@@ -55,23 +80,18 @@ export async function handleYTCommand(message, token, env) {
         
         if (!isUrl) {
             const searchResult = await searchYouTube(input);
-            finalUrl = searchResult.url;
+            finalUrl = `https://www.youtube.com/watch?v=${searchResult.videoId}`;
         }
         
-        videoInfo = await getVideoInfo(finalUrl);
+        videoInfo = await getYouTubeDownloadInfo(finalUrl);
         
-        if (!videoInfo.download_url) {
+        if (!videoInfo.videoUrl) {
             throw new Error("No video found");
         }
         
-        const videoUrl = videoInfo.download_url;
-        const title = escapeHTML(videoInfo.title || "YouTube Video");
-        const channel = escapeHTML(videoInfo.channel || "Unknown");
-        const views = videoInfo.views || "N/A";
+        const caption = `<b>🎥 Title:</b> <code>${escapeHTML(videoInfo.title)}</code>\n━━━━━━━━━━━━━━━━━━━━━\n<b>👁️ Views:</b> ${videoInfo.views}\n<b>🎤 Channel:</b> ${escapeHTML(videoInfo.channel)}\n🔗 <a href="${finalUrl}">Watch on YouTube</a>`;
         
-        const caption = `<b>🎥 Title:</b> <code>${title}</code>\n━━━━━━━━━━━━━━━━━━━━━\n<b>👁️ Views:</b> ${views}\n<b>🎤 Channel:</b> ${channel}\n🔗 <a href="${finalUrl}">Watch on YouTube</a>`;
-        
-        const result = await sendVideo(token, chatId, videoUrl, caption, PARSE_MODE);
+        const result = await sendVideo(token, chatId, videoInfo.videoUrl, caption, PARSE_MODE);
         
         if (result.ok && statusId) {
             await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
@@ -118,22 +138,18 @@ export async function handleSongCommand(message, token, env) {
         
         if (!isUrl) {
             const searchResult = await searchYouTube(input);
-            finalUrl = searchResult.url;
+            finalUrl = `https://www.youtube.com/watch?v=${searchResult.videoId}`;
         }
         
-        videoInfo = await getVideoInfo(finalUrl);
+        videoInfo = await getYouTubeDownloadInfo(finalUrl);
         
-        if (!videoInfo.audio_url) {
+        if (!videoInfo.audioUrl) {
             throw new Error("No audio found");
         }
         
-        const audioUrl = videoInfo.audio_url;
-        const title = escapeHTML(videoInfo.title || "YouTube Audio");
-        const channel = escapeHTML(videoInfo.channel || "Unknown");
+        const caption = `<b>🎵 Title:</b> <code>${escapeHTML(videoInfo.title)}</code>\n<b>🎤 Artist:</b> ${escapeHTML(videoInfo.channel)}\n🔗 <a href="${finalUrl}">Source</a>`;
         
-        const caption = `<b>🎵 Title:</b> <code>${title}</code>\n<b>🎤 Artist:</b> ${channel}\n🔗 <a href="${finalUrl}">Source</a>`;
-        
-        const result = await sendAudio(token, chatId, audioUrl, caption, title.substring(0, 64), channel.substring(0, 64), PARSE_MODE);
+        const result = await sendAudio(token, chatId, videoInfo.audioUrl, caption, videoInfo.title.substring(0, 64), videoInfo.channel.substring(0, 64), PARSE_MODE);
         
         if (result.ok && statusId) {
             await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
