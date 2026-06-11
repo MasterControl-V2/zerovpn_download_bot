@@ -1,5 +1,5 @@
 // fbDownloader.js
-// Facebook Video Downloader using your own API
+// Facebook Video Downloader - Original Logic
 
 import { sendMessage, sendVideo } from './telegramApiHelpers.js';
 import { FB_API_BASE, PARSE_MODE } from './constants.js';
