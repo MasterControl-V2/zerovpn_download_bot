@@ -1,12 +1,12 @@
 // _middleware.js
-// Download Bot Only - Facebook, TikTok, YouTube, Twitter/X
+// Download Bot Only - Facebook, TikTok, YouTube
+// Cloudflare Pages Functions entry point
 
 import { TELEGRAM_API, BOT_TOKEN, PARSE_MODE } from './constants.js';
 import { sendMessage } from './telegramApiHelpers.js';
 import { handleFBCommand } from './fbDownloader.js';
 import { handleTikTokCommand } from './tikDownloader.js';
 import { handleYTCommand, handleSongCommand } from './ytDownloader.js';
-import { handleTXCommand } from './txDownloader.js';
 
 export async function onRequest(context) {
     const { request, env } = context;
@@ -76,9 +76,6 @@ export async function onRequest(context) {
                     case '/audio':
                         await handleSongCommand(message, token, env);
                         break;
-                    case '/tx':
-                        await handleTXCommand(message, token, env);
-                        break;
                     case '/start':
                         await sendMessage(token, chatId, 
                             "🎬 <b>Download Bot is Ready!</b>\n\n" +
@@ -86,8 +83,7 @@ export async function onRequest(context) {
                             "/fb &lt;url&gt; - Facebook Video\n" +
                             "/tik &lt;url&gt; - TikTok Video\n" +
                             "/yt &lt;url&gt; - YouTube Video\n" +
-                            "/song &lt;name&gt; - YouTube Audio\n" +
-                            "/tx &lt;url&gt; - Twitter/X Video",
+                            "/song &lt;name&gt; - YouTube Audio",
                             PARSE_MODE);
                         break;
                     default:
