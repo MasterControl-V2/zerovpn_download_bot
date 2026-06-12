@@ -5,7 +5,7 @@ import { sendMessage } from './telegramApiHelpers.js';
 
 // Use your own backend API endpoint
 // If you have tik.py deployed, put your URL here
-const TIKTOK_API_BASE = "https://YOUR-BACKEND-URL.pages.dev/tik/dl"; // ⚠️ CHANGE THIS
+const TIKTOK_API_BASE = "https://zero-tik.mycontrol-bot2.workers.dev/tik/dl";
 const PARSE_MODE = 'HTML';
 
 function escapeHTML(text = '') {
