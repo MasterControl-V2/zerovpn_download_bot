@@ -1,8 +1,8 @@
-// tikDownloader.js - FULL VERSION (with all metadata)
+// tikDownloader.js - FINAL VERSION
 
 import { sendMessage } from './telegramApiHelpers.js';
 
-const TIKTOK_API_BASE = "https://zero-tik.mycontrol-bot2.workers.dev/tik/dl";
+const TIKTOK_API_BASE = "https://zeroap-tiktok.mycontrol-bot2.workers.dev/tik/dl";
 const PARSE_MODE = 'HTML';
 
 function escapeHTML(text = '') {
@@ -14,8 +14,8 @@ function escapeHTML(text = '') {
 }
 
 function formatNumber(num) {
-    if (!num) return "0";
-    return num.toString().toLocaleString();
+    if (!num || num === "0") return "0";
+    return num.toString();
 }
 
 async function tgRequest(token, method, payload, botKeyValue) {
@@ -91,12 +91,13 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
     try {
         const statusResult = await tgRequest(token, 'sendMessage', {
             chat_id: chatId,
-            text: "<b>🔍 Processing TikTok video...</b>",
+            text: "<b>🔍 Processing TikTok...</b>",
             parse_mode: PARSE_MODE
         }, botKeyValue);
         statusMsgId = statusResult.result?.message_id;
         
         const apiUrl = `${TIKTOK_API_BASE}?url=${encodeURIComponent(url)}`;
+        console.log(`[handleTikTokCommand] Calling: ${apiUrl}`);
         
         const response = await fetch(apiUrl, {
             headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
@@ -104,6 +105,7 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
         });
         
         const result = await response.json();
+        console.log(`[handleTikTokCommand] Result:`, JSON.stringify(result));
         
         if (!result.success || !result.video_url) {
             throw new Error(result.error || "No video found");
@@ -132,7 +134,6 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
         const user = message.from || {};
         const safeName = escapeHTML(user.first_name || "User");
         
-        // ✅ FULL CAPTION with all metadata (like YouTube/Facebook)
         const captionText = `<b>🎵 TikTok Video</b>\n` +
                             `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
                             `<b>🎤 Author:</b> <code>${escapeHTML(author)}</code>\n` +
@@ -148,13 +149,14 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
                             `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
                             `<b>Downloaded By:</b> <a href="tg://user?id=${userId}">${safeName}</a>`;
         
-        const sendResult = await sendVideoFromR2(chatId, r2FileName, captionText, token, botKeyValue, env);
+        await sendVideoFromR2(chatId, r2FileName, captionText, token, botKeyValue, env);
         
-        if (sendResult.ok) {
+        if (statusMsgId) {
             await tgRequest(token, 'deleteMessage', { chat_id: chatId, message_id: statusMsgId }, botKeyValue);
         }
         
     } catch (error) {
+        console.error("[handleTikTokCommand] Error:", error);
         const errorMessage = `<b>❌ ${escapeHTML(error.message)}</b>`;
         if (statusMsgId) {
             await tgRequest(token, 'editMessageText', {
