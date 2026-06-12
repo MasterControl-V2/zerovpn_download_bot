@@ -1,6 +1,5 @@
 // ============================================================
 // FILE: functions/ytDownloader.js
-// (ORIGINAL - UNCHANGED)
 // ============================================================
 
 import { sendMessage } from './telegramApiHelpers.js';
