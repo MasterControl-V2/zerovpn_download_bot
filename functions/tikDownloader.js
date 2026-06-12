@@ -32,7 +32,10 @@ async function tgRequest(token, method, payload, botKeyValue) {
 
 async function streamToR2(videoUrl, fileName, env) {
     const response = await fetch(videoUrl, {
-        headers: { "User-Agent": "Mozilla/5.0" }
+        headers: { 
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "video/*"
+        }
     });
     if (!response.ok) throw new Error(`Failed: ${response.status}`);
     await env.MY_BUCKET.put(fileName, response.body, {
@@ -44,12 +47,13 @@ async function streamToR2(videoUrl, fileName, env) {
 async function sendVideoFromR2(chatId, fileName, caption, token, botKeyValue, env) {
     const object = await env.MY_BUCKET.get(fileName);
     if (!object) throw new Error("Video not found");
+    const videoBlob = await object.blob();
     const formData = new FormData();
     formData.append('chat_id', chatId.toString());
     formData.append('caption', caption);
     formData.append('parse_mode', PARSE_MODE);
     formData.append('supports_streaming', 'true');
-    formData.append('video', await object.blob(), 'tiktok_video.mp4');
+    formData.append('video', videoBlob, 'tiktok_video.mp4');
     const headers = {};
     if (botKeyValue) headers['X-Bot-Key'] = botKeyValue;
     const response = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
@@ -91,16 +95,19 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
     try {
         const statusResult = await tgRequest(token, 'sendMessage', {
             chat_id: chatId,
-            text: "<b>🔍 Processing TikTok...</b>",
+            text: "<b>🔍 Processing TikTok video...</b>",
             parse_mode: PARSE_MODE
         }, botKeyValue);
         statusMsgId = statusResult.result?.message_id;
         
         const apiUrl = `${TIKTOK_API_BASE}?url=${encodeURIComponent(url)}`;
-        console.log(`[handleTikTokCommand] Calling: ${apiUrl}`);
+        console.log(`[handleTikTokCommand] Calling API: ${apiUrl}`);
         
         const response = await fetch(apiUrl, {
-            headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
+            headers: { 
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json"
+            },
             signal: AbortSignal.timeout(30000)
         });
         
@@ -112,14 +119,14 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
         }
         
         const videoUrl = result.video_url;
-        const author = result.author || "Unknown";
+        const author = result.author || "TikTok User";
         const caption = result.caption || "";
         const stats = result.stats || {};
         const duration = result.duration || "0:00";
         
         await tgRequest(token, 'editMessageText', {
             chat_id: chatId, message_id: statusMsgId,
-            text: "<b>⬇️ Downloading...</b>",
+            text: "<b>📥 Downloading...</b>",
             parse_mode: PARSE_MODE
         }, botKeyValue);
         
@@ -127,37 +134,43 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
         
         await tgRequest(token, 'editMessageText', {
             chat_id: chatId, message_id: statusMsgId,
-            text: "<b>📤 Uploading...</b>",
+            text: "<b>📤 Uploading to Telegram...</b>",
             parse_mode: PARSE_MODE
         }, botKeyValue);
         
         const user = message.from || {};
         const safeName = escapeHTML(user.first_name || "User");
         
-        const captionText = `<b>🎵 TikTok Video</b>\n` +
-                            `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
-                            `<b>🎤 Author:</b> <code>${escapeHTML(author)}</code>\n` +
-                            (caption ? `<b>📝 Caption:</b> <i>${escapeHTML(caption)}</i>\n` : '') +
-                            `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
-                            `<b>👁️ Views:</b> ${formatNumber(stats.views)}\n` +
-                            `<b>❤️ Likes:</b> ${formatNumber(stats.likes)}\n` +
-                            `<b>💬 Comments:</b> ${formatNumber(stats.comments)}\n` +
-                            `<b>🔄 Shares:</b> ${formatNumber(stats.shares)}\n` +
-                            `<b>⏱️ Duration:</b> ${duration}\n` +
-                            `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
-                            `<b>🔗 Source:</b> <a href="${url}">Watch On TikTok</a>\n` +
-                            `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
-                            `<b>Downloaded By:</b> <a href="tg://user?id=${userId}">${safeName}</a>`;
+        let captionText = `<b>🎵 TikTok Video</b>\n`;
+        captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
+        captionText += `<b>🎤 Author:</b> <code>${escapeHTML(author)}</code>\n`;
         
-        await sendVideoFromR2(chatId, r2FileName, captionText, token, botKeyValue, env);
+        if (caption && caption !== "") {
+            captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
+            const shortCaption = caption.length > 200 ? caption.substring(0, 197) + "..." : caption;
+            captionText += `<b>📝 Caption:</b> <i>${escapeHTML(shortCaption)}</i>\n`;
+        }
         
-        if (statusMsgId) {
+        captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
+        captionText += `<b>👁️ Views:</b> ${formatNumber(stats.views)}\n`;
+        captionText += `<b>❤️ Likes:</b> ${formatNumber(stats.likes)}\n`;
+        captionText += `<b>💬 Comments:</b> ${formatNumber(stats.comments)}\n`;
+        captionText += `<b>🔄 Shares:</b> ${formatNumber(stats.shares)}\n`;
+        captionText += `<b>⏱️ Duration:</b> ${duration}\n`;
+        captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
+        captionText += `<b>🔗 Source:</b> <a href="${url}">Watch On TikTok</a>\n`;
+        captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
+        captionText += `<b>Downloaded By:</b> <a href="tg://user?id=${userId}">${safeName}</a>`;
+        
+        const sendResult = await sendVideoFromR2(chatId, r2FileName, captionText, token, botKeyValue, env);
+        
+        if (sendResult.ok) {
             await tgRequest(token, 'deleteMessage', { chat_id: chatId, message_id: statusMsgId }, botKeyValue);
         }
         
     } catch (error) {
         console.error("[handleTikTokCommand] Error:", error);
-        const errorMessage = `<b>❌ ${escapeHTML(error.message)}</b>`;
+        const errorMessage = `<b>❌ Error: ${escapeHTML(error.message)}</b>`;
         if (statusMsgId) {
             await tgRequest(token, 'editMessageText', {
                 chat_id: chatId, message_id: statusMsgId,
