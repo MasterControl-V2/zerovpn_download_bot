@@ -2,7 +2,7 @@
 
 import { sendMessage } from './telegramApiHelpers.js';
 
-const TIKTOK_API_BASE = "https://zeroap-tiktok.mycontrol-bot2.workers.dev/tik/dl";
+const TIKTOK_API_BASE = "https://tiktok-api.mycontrol-bot2.workers.dev/tik/dl";
 const PARSE_MODE = 'HTML';
 
 function escapeHTML(text = '') {
