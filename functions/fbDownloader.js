@@ -1,6 +1,5 @@
 // ============================================================
 // FILE: functions/fbDownloader.js
-// (ORIGINAL - UNCHANGED)
 // ============================================================
 
 import { sendMessage } from './telegramApiHelpers.js';
