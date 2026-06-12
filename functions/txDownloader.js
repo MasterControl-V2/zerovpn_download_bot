@@ -1,6 +1,5 @@
 // ============================================================
 // FILE: functions/txDownloader.js
-// (ORIGINAL - UNCHANGED)
 // ============================================================
 
 import { sendMessage } from './telegramApiHelpers.js';
