@@ -1,5 +1,6 @@
 // ytDownloader.js
 // YouTube Video & Audio Downloader with R2 Storage
+// Fixed: Support API response format from nyeinkokoaung.alwaysdata.net
 
 import { sendMessage } from './telegramApiHelpers';
 
@@ -82,7 +83,7 @@ async function sendAudioFromR2(chatId, fileName, caption, videoDetails, token, b
     formData.append('parse_mode', PARSE_MODE);
     formData.append('title', videoDetails.title.substring(0, 64));
     formData.append('performer', videoDetails.channel.substring(0, 64));
-    formData.append('audio', await object.blob(), 'audio.mp3');
+    formData.append('audio', await object.blob(), `${videoDetails.title.substring(0, 20)}.mp3`);
     
     if (videoDetails.thumbnail) {
         try {
@@ -105,7 +106,10 @@ async function sendAudioFromR2(chatId, fileName, caption, videoDetails, token, b
 async function searchYouTube(query) {
     const searchUrl = `${YT_SEARCH_API_URL}?action=search&query=${encodeURIComponent(query)}&limit=1`;
     const response = await fetch(searchUrl, {
-        headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
+        headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json"
+        },
         signal: AbortSignal.timeout(30000)
     });
     const data = await response.json();
@@ -115,15 +119,25 @@ async function searchYouTube(query) {
 
 async function getYouTubeDownloadInfo(url) {
     const downloadUrl = `${YT_API_URL}?url=${encodeURIComponent(url)}`;
+    console.log(`[getYouTubeDownloadInfo] Fetching: ${downloadUrl}`);
+    
     const response = await fetch(downloadUrl, {
-        headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
+        headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json"
+        },
         signal: AbortSignal.timeout(30000)
     });
     const data = await response.json();
-    if (!data.success) throw new Error(data.error || "Could not extract video");
+    console.log(`[getYouTubeDownloadInfo] Response:`, JSON.stringify(data));
     
+    if (!data.success) throw new Error(data.error || "Could not extract video data");
+    
+    // ✅ API response structure: { success: true, result: { title, author, medias: [...] } }
     const result = data.result || data;
-    const mediaItems = result.medias || result.download_links?.medias || [];
+    const medias = result.medias || [];
+    
+    console.log(`[getYouTubeDownloadInfo] Found ${medias.length} media items`);
     
     return {
         success: true,
@@ -131,13 +145,13 @@ async function getYouTubeDownloadInfo(url) {
             title: result.title || "Unknown Title",
             channel: result.author || result.channel || "Unknown Channel",
             views: result.views || "N/A",
-            thumbnail: result.thumbnail || result.thumb,
-            download_links: {
-                medias: mediaItems.map(item => ({
-                    url: item.url || item.link,
-                    type: (item.type || (item.hasVideo ? 'video' : 'audio')).toLowerCase()
-                }))
-            }
+            thumbnail: result.thumbnail || null,
+            medias: medias.map(m => ({
+                url: m.url,
+                type: m.type || (m.hasVideo ? 'video' : 'audio'),
+                quality: m.quality,
+                size: m.size
+            }))
         }
     };
 }
@@ -186,7 +200,7 @@ async function processYTRequest(chatId, userId, message, input, mode, token, env
         
         await tgRequest(token, 'editMessageText', {
             chat_id: chatId, message_id: statusId,
-            text: "<b>✅ Getting download link...</b>",
+            text: "<b>📡 Getting download link...</b>",
             parse_mode: PARSE_MODE
         }, botKeyValue);
         
@@ -201,16 +215,24 @@ async function processYTRequest(chatId, userId, message, input, mode, token, env
             };
         }
         
-        const medias = dlData.data.download_links.medias;
-        let downloadObj;
+        // ✅ Find media by type (case insensitive)
+        const medias = dlData.data.medias || [];
+        let downloadObj = null;
         
         if (mode === 'audio') {
-            downloadObj = medias.find(m => m.type === 'audio');
+            downloadObj = medias.find(m => m.type && m.type.toLowerCase() === 'audio');
+            if (!downloadObj) downloadObj = medias.find(m => m.type && m.type.toLowerCase() !== 'video');
         } else {
-            downloadObj = medias.find(m => m.type === 'video');
+            downloadObj = medias.find(m => m.type && m.type.toLowerCase() === 'video');
+            if (!downloadObj) downloadObj = medias[0];
         }
         
-        if (!downloadObj?.url) throw new Error("No compatible format found");
+        if (!downloadObj || !downloadObj.url) {
+            console.error(`[processYTRequest] No media found. Medias:`, JSON.stringify(medias));
+            throw new Error("No compatible format found");
+        }
+        
+        console.log(`[processYTRequest] Selected ${mode}: ${downloadObj.type} - ${downloadObj.quality}`);
         
         const fileSizeMB = await checkFileSize(downloadObj.url);
         if (fileSizeMB !== null && fileSizeMB > 100) {
@@ -265,22 +287,24 @@ async function processYTRequest(chatId, userId, message, input, mode, token, env
 
 export async function handleYTCommand(message, token, env, botKeyValue) {
     const chatId = message.chat.id;
+    const userId = message.from.id;
     let input = message.text.replace(/^\/yt\s+/i, '').replace(/^\/youtube\s+/i, '').trim();
     if (!input && message.reply_to_message?.text) input = message.reply_to_message.text.trim();
     if (!input) {
         await sendMessage(token, chatId, "<b>❌ Usage:</b> <code>/yt &lt;YouTube link or search&gt;</code>", PARSE_MODE, null, botKeyValue);
         return;
     }
-    await processYTRequest(chatId, message.from.id, message, input, 'video', token, env, botKeyValue);
+    await processYTRequest(chatId, userId, message, input, 'video', token, env, botKeyValue);
 }
 
 export async function handleSongCommand(message, token, env, botKeyValue) {
     const chatId = message.chat.id;
+    const userId = message.from.id;
     let input = message.text.replace(/^\/song\s+/i, '').replace(/^\/audio\s+/i, '').trim();
     if (!input && message.reply_to_message?.text) input = message.reply_to_message.text.trim();
     if (!input) {
         await sendMessage(token, chatId, "<b>❌ Usage:</b> <code>/song &lt;song name or link&gt;</code>", PARSE_MODE, null, botKeyValue);
         return;
     }
-    await processYTRequest(chatId, message.from.id, message, input, 'audio', token, env, botKeyValue);
+    await processYTRequest(chatId, userId, message, input, 'audio', token, env, botKeyValue);
 }
