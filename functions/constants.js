@@ -1,23 +1,22 @@
-// constants.js
-// Download Bot Only - No Link Checker, No Group Management
+// ============================================================
+// FILE: functions/constants.js
+// ============================================================
 
 export const TELEGRAM_API = "https://api.telegram.org/bot";
 
-// Bot Commands only for Downloaders
-export const BOT_COMMANDS = [
-    '/start',
-    '/fb',
-    '/fbdl',
-    '/tik',
-    '/tiktok',
-    '/yt',
-    '/youtube',
-    '/song',
-    '/audio',
-    '/tx'
+export const ADMIN_USERNAME = "@Zero_Free_Vpn";
+
+export const SUPPORT_GROUP_LINK = "https://t.me/zero_freevpn";
+
+export const CONTROL_BOT_URL = `https://master-control.pages.dev/`;
+
+// Download only commands - no admin commands
+export const PUBLIC_BOT_PUBLIC_COMMANDS = [
+    '/start', '/fb', '/fbdl', '/tik', '/tiktok', '/yt', '/youtube', '/song', '/audio', '/tx'
 ];
 
-// For validation (optional, can be empty)
-export const ADMIN_USERNAME = "@Zero_Free_Vpn";
-export const SUPPORT_GROUP_LINK = "https://t.me/zero_freevpn";
-export const OWNER_ADMIN_IDS = [7576434717, 7240495054];
+export const PUBLIC_BOT_ADMIN_COMMANDS = [];
+
+export const PUBLIC_BOT_OWNER_COMMANDS = [];
+
+export const OWNER_ADMIN_IDS = [];
