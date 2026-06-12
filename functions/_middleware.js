@@ -1,7 +1,5 @@
 // ============================================================
 // PURE DOWNLOAD BOT - Facebook, TikTok, YouTube, Twitter/X
-// All admin commands, group management, forex, summaries, etc. REMOVED
-// Original download logic kept 100% intact
 // ============================================================
 
 // ============================================================
