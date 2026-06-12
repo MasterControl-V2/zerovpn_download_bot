@@ -1,5 +1,6 @@
 // fbDownloader.js
-// Facebook Video Downloader with R2 Storage - Multiple API Format Support
+// Facebook Video Downloader with R2 Storage
+// Fixed: Support new API response format with download_urls array
 
 import { sendMessage } from './telegramApiHelpers';
 
@@ -82,7 +83,6 @@ async function deleteFromR2(fileName, env) {
     try { await env.MY_BUCKET.delete(fileName); } catch(e) {}
 }
 
-// ✅ အဓိက function - API response အမျိုးမျိုးကို support ဖြစ်အောင် ပြင်ထားတယ်
 export async function handleFBCommand(message, token, env, botKeyValue) {
     const chatId = message.chat.id;
     const userId = message.from.id;
@@ -126,48 +126,27 @@ export async function handleFBCommand(message, token, env, botKeyValue) {
         let title = "Facebook Video";
         let thumb = null;
         
-        // ✅ Format 1: { success: true, data: { video_url, title, thumbnail } }
-        if (data.success === true && data.data) {
-            videoUrl = data.data.video_url || data.data.download_url || data.data.url;
+        // ✅ NEW API FORMAT: { status: "success", data: { title, thumbnail, download_urls: [{ type, quality, url }] } }
+        if (data.status === "success" && data.data) {
             title = data.data.title || "Facebook Video";
-            thumb = data.data.thumbnail || data.data.thumb;
+            thumb = data.data.thumbnail;
+            
+            const downloadUrls = data.data.download_urls || [];
+            // Prioritize HD > video > first available
+            let bestVideo = downloadUrls.find(v => v.quality === "HD" && v.type === "video");
+            if (!bestVideo) bestVideo = downloadUrls.find(v => v.type === "video");
+            if (!bestVideo) bestVideo = downloadUrls[0];
+            
+            if (bestVideo && bestVideo.url) {
+                videoUrl = bestVideo.url;
+            }
         }
-        // ✅ Format 2: { success: true, video_url, title, thumbnail }
-        else if (data.success === true && data.video_url) {
-            videoUrl = data.video_url;
-            title = data.title || "Facebook Video";
-            thumb = data.thumbnail;
-        }
-        // ✅ Format 3: { result: { video_url, title, thumbnail } }
-        else if (data.result && data.result.video_url) {
-            videoUrl = data.result.video_url;
-            title = data.result.title || "Facebook Video";
-            thumb = data.result.thumbnail;
-        }
-        // ✅ Format 4: { links: [{ url, quality }] } (old API format)
+        // ✅ OLD API FORMAT: { links: [{ url, quality }] }
         else if (data.links && data.links.length > 0) {
             const videoObj = data.links.find(l => l.quality === "HD") || 
                              data.links.find(l => l.quality === "video+audio") || 
                              data.links[0];
             videoUrl = videoObj.url;
-            title = data.title || "Facebook Video";
-            thumb = data.thumbnail;
-        }
-        // ✅ Format 5: { video_url } directly
-        else if (data.video_url) {
-            videoUrl = data.video_url;
-            title = data.title || "Facebook Video";
-            thumb = data.thumbnail;
-        }
-        // ✅ Format 6: { download_url } directly
-        else if (data.download_url) {
-            videoUrl = data.download_url;
-            title = data.title || "Facebook Video";
-            thumb = data.thumbnail;
-        }
-        // ✅ Format 7: { url } directly
-        else if (data.url) {
-            videoUrl = data.url;
             title = data.title || "Facebook Video";
             thumb = data.thumbnail;
         }
