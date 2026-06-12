@@ -1,6 +1,5 @@
 // ============================================================
 // FILE: functions/tikDownloader.js
-// (ORIGINAL - UNCHANGED)
 // ============================================================
 
 import { sendMessage } from './telegramApiHelpers.js';
