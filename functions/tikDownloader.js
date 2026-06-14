@@ -1,4 +1,4 @@
-// tikDownloader.js - FINAL VERSION
+// tikDownloader.js - USING ORIGINAL API METADATA
 
 import { sendMessage } from './telegramApiHelpers.js';
 
@@ -120,7 +120,9 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
         
         const videoUrl = result.video_url;
         const author = result.author || "TikTok User";
-        const caption = result.caption || "";
+        const authorId = result.author_id || "Unknown";
+        const title = result.title || "TikTok Content";
+        const caption = result.caption || title;
         const stats = result.stats || {};
         const duration = result.duration || "0:00";
         
@@ -141,21 +143,16 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
         const user = message.from || {};
         const safeName = escapeHTML(user.first_name || "User");
         
-        let captionText = `<b>🎵 TikTok Video</b>\n`;
+        // Build caption like the original tiktok.js format
+        let captionText = `<b>🎥 Title:</b> <code>${escapeHTML(title.substring(0, 600))}</code>\n`;
         captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
-        captionText += `<b>🎤 Author:</b> <code>${escapeHTML(author)}</code>\n`;
-        
-        if (caption && caption !== "") {
-            captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
-            const shortCaption = caption.length > 200 ? caption.substring(0, 197) + "..." : caption;
-            captionText += `<b>📝 Caption:</b> <i>${escapeHTML(shortCaption)}</i>\n`;
-        }
-        
+        captionText += `<b>🎨 Author:</b> <code>${escapeHTML(author)}</code>\n`;
+        captionText += `<b>🆔 Author ID:</b> <code>${escapeHTML(authorId)}</code>\n`;
         captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
-        captionText += `<b>👁️ Views:</b> ${formatNumber(stats.views)}\n`;
-        captionText += `<b>❤️ Likes:</b> ${formatNumber(stats.likes)}\n`;
-        captionText += `<b>💬 Comments:</b> ${formatNumber(stats.comments)}\n`;
-        captionText += `<b>🔄 Shares:</b> ${formatNumber(stats.shares)}\n`;
+        captionText += `<b>👁‍🗨 Views:</b> ${formatNumber(stats.views)} Views\n`;
+        captionText += `<b>❤️ Likes:</b> ${formatNumber(stats.likes)} Likes\n`;
+        captionText += `<b>🔄 Shares:</b> ${formatNumber(stats.shares)} Shares\n`;
+        captionText += `<b>💬 Comments:</b> ${formatNumber(stats.comments)} Comments\n`;
         captionText += `<b>⏱️ Duration:</b> ${duration}\n`;
         captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
         captionText += `<b>🔗 Source:</b> <a href="${url}">Watch On TikTok</a>\n`;
