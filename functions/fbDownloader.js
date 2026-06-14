@@ -1,5 +1,5 @@
-// fbDownloader.js - CORRECTED VERSION
-// Facebook Video Downloader - Working with nkka404 API
+// fbDownloader.js
+// Facebook Video Downloader
 
 import { sendMessage } from './telegramApiHelpers.js';
 
