@@ -1,8 +1,8 @@
-// ytDownloader.js - WORKING VERSION with Worker API
+// ytDownloader.js - WORKING with your Worker
 
 import { sendMessage } from './telegramApiHelpers.js';
 
-const YT_WORKER_URL = "https://yt-api.mycontrol-bot2.workers.dev/yt/dl?url"; // Change to your worker URL
+const YT_WORKER_URL = "https://yt-api.mycontrol-bot2.workers.dev";
 const PARSE_MODE = 'HTML';
 
 function escapeHTML(text = '') {
@@ -25,41 +25,29 @@ async function tgRequest(token, method, payload, botKeyValue) {
     return await response.json();
 }
 
-async function streamToR2(mediaUrl, fileName, type, env) {
+async function streamToR2(mediaUrl, fileName, env) {
     const response = await fetch(mediaUrl, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
-            'Accept': type === 'video' ? 'video/*' : 'audio/*'
-        }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
     });
-    if (!response.ok) throw new Error(`Failed to fetch ${type} source`);
+    if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
     await env.MY_BUCKET.put(fileName, response.body, {
-        httpMetadata: { contentType: type === 'video' ? 'video/mp4' : 'audio/mpeg' }
+        httpMetadata: { contentType: fileName.endsWith('.mp4') ? 'video/mp4' : 'audio/mpeg' }
     });
     return fileName;
 }
 
-async function sendVideoFromR2(chatId, fileName, caption, thumbUrl, token, botKeyValue, env) {
+async function sendVideoFromR2(chatId, fileName, caption, token, botKeyValue, env) {
     const object = await env.MY_BUCKET.get(fileName);
-    if (!object) throw new Error("Video not found in R2");
-    
+    if (!object) throw new Error("Video not found");
+    const videoBlob = await object.blob();
     const formData = new FormData();
     formData.append('chat_id', chatId.toString());
     formData.append('caption', caption);
     formData.append('parse_mode', PARSE_MODE);
     formData.append('supports_streaming', 'true');
-    formData.append('video', await object.blob(), 'video.mp4');
-    
-    if (thumbUrl) {
-        try {
-            const thumbRes = await fetch(thumbUrl);
-            if (thumbRes.ok) formData.append('thumbnail', await thumbRes.blob(), 'thumb.jpg');
-        } catch(e) {}
-    }
-    
+    formData.append('video', videoBlob, 'video.mp4');
     const headers = {};
     if (botKeyValue) headers['X-Bot-Key'] = botKeyValue;
-    
     const response = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
         method: 'POST',
         headers: headers,
@@ -68,28 +56,19 @@ async function sendVideoFromR2(chatId, fileName, caption, thumbUrl, token, botKe
     return await response.json();
 }
 
-async function sendAudioFromR2(chatId, fileName, caption, videoDetails, token, botKeyValue, env) {
+async function sendAudioFromR2(chatId, fileName, caption, title, performer, token, botKeyValue, env) {
     const object = await env.MY_BUCKET.get(fileName);
-    if (!object) throw new Error("Audio not found in R2");
-    
+    if (!object) throw new Error("Audio not found");
+    const audioBlob = await object.blob();
     const formData = new FormData();
     formData.append('chat_id', chatId.toString());
     formData.append('caption', caption);
     formData.append('parse_mode', PARSE_MODE);
-    formData.append('title', videoDetails.title.substring(0, 64));
-    formData.append('performer', videoDetails.channel.substring(0, 64));
-    formData.append('audio', await object.blob(), `${videoDetails.title.substring(0, 20)}.mp3`);
-    
-    if (videoDetails.thumbnail) {
-        try {
-            const thumbRes = await fetch(videoDetails.thumbnail);
-            if (thumbRes.ok) formData.append('thumbnail', await thumbRes.blob(), 'thumb.jpg');
-        } catch(e) {}
-    }
-    
+    formData.append('title', title.substring(0, 64));
+    formData.append('performer', performer.substring(0, 64));
+    formData.append('audio', audioBlob, 'audio.mp3');
     const headers = {};
     if (botKeyValue) headers['X-Bot-Key'] = botKeyValue;
-    
     const response = await fetch(`https://api.telegram.org/bot${token}/sendAudio`, {
         method: 'POST',
         headers: headers,
@@ -100,132 +79,6 @@ async function sendAudioFromR2(chatId, fileName, caption, videoDetails, token, b
 
 async function deleteFromR2(fileName, env) {
     try { await env.MY_BUCKET.delete(fileName); } catch(e) {}
-}
-
-async function processYTRequest(chatId, userId, message, input, mode, token, env, botKeyValue) {
-    let statusId = null;
-    const r2FileName = `yt_${userId}_${Date.now()}.${mode === 'audio' ? 'mp3' : 'mp4'}`;
-    
-    try {
-        const statusResult = await tgRequest(token, 'sendMessage', {
-            chat_id: chatId,
-            text: mode === 'video' ? "<b>🎬 Processing YouTube Video...</b>" : "<b>🎵 Processing YouTube Audio...</b>",
-            parse_mode: PARSE_MODE
-        }, botKeyValue);
-        statusId = statusResult.result?.message_id;
-        
-        let finalUrl = input;
-        let videoDetails = { views: "N/A", title: "Unknown", thumbnail: null, channel: "Unknown" };
-        const isUrl = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/\S+/.test(input);
-        
-        // If not URL, search
-        if (!isUrl) {
-            await tgRequest(token, 'editMessageText', {
-                chat_id: chatId, message_id: statusId,
-                text: "<b>🔍 Searching YouTube...</b>",
-                parse_mode: PARSE_MODE
-            }, botKeyValue);
-            
-            const searchRes = await fetch(`${YT_WORKER_URL}/yt/search`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: input })
-            });
-            const searchData = await searchRes.json();
-            
-            if (!searchData.success) {
-                throw new Error("No results found");
-            }
-            
-            finalUrl = `https://www.youtube.com/watch?v=${searchData.videoId}`;
-            videoDetails = {
-                views: "N/A",
-                title: searchData.title,
-                thumbnail: searchData.thumbnail,
-                channel: searchData.channel
-            };
-        }
-        
-        await tgRequest(token, 'editMessageText', {
-            chat_id: chatId, message_id: statusId,
-            text: "<b>Found! ☑️ Getting video info...</b>",
-            parse_mode: PARSE_MODE
-        }, botKeyValue);
-        
-        // Get download info
-        const endpoint = mode === 'audio' ? '/yt/audio' : '/yt/info';
-        const infoRes = await fetch(`${YT_WORKER_URL}${endpoint}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ videoUrl: finalUrl })
-        });
-        
-        const infoData = await infoRes.json();
-        
-        if (!infoData.success) {
-            throw new Error(infoData.error || "Could not get download URL");
-        }
-        
-        if (mode === 'audio') {
-            videoDetails = {
-                title: infoData.title,
-                channel: infoData.channel,
-                thumbnail: infoData.thumbnail,
-                views: "N/A"
-            };
-            await streamToR2(infoData.audio_url, r2FileName, 'audio', env);
-        } else {
-            videoDetails = {
-                title: infoData.title,
-                channel: infoData.channel,
-                thumbnail: infoData.thumbnail,
-                views: infoData.views
-            };
-            await streamToR2(infoData.video_url, r2FileName, 'video', env);
-        }
-        
-        await tgRequest(token, 'editMessageText', {
-            chat_id: chatId, message_id: statusId,
-            text: "<b>📥 Uploading to Telegram...</b>",
-            parse_mode: PARSE_MODE
-        }, botKeyValue);
-        
-        const user = message.from || {};
-        const fullName = escapeHTML([user.first_name, user.last_name].filter(Boolean).join(' ') || "User");
-        
-        const caption = `<b>${mode === 'audio' ? '🎵' : '🎥'} Title:</b> <code>${escapeHTML(videoDetails.title)}</code>\n` +
-                        `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
-                        `<b>👁️‍🗨️ Views:</b> ${videoDetails.views}\n` +
-                        `<b>🎤 Channel:</b> ${escapeHTML(videoDetails.channel)}\n` +
-                        `<b>🔗 URL:</b> <a href="${finalUrl}">Watch on YouTube</a>\n` +
-                        `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
-                        `<b>Downloaded By:</b> <a href="tg://user?id=${userId}">${fullName}</a>`;
-        
-        let result;
-        if (mode === 'audio') {
-            result = await sendAudioFromR2(chatId, r2FileName, caption, videoDetails, token, botKeyValue, env);
-        } else {
-            result = await sendVideoFromR2(chatId, r2FileName, caption, videoDetails.thumbnail, token, botKeyValue, env);
-        }
-        
-        if (result.ok) {
-            await tgRequest(token, 'deleteMessage', { chat_id: chatId, message_id: statusId }, botKeyValue);
-        } else {
-            throw new Error(result.description || "Telegram refused the file");
-        }
-        
-    } catch (error) {
-        console.error("[processYTRequest] Error:", error);
-        if (statusId) {
-            await tgRequest(token, 'editMessageText', {
-                chat_id: chatId, message_id: statusId,
-                text: `<b>❌ ${escapeHTML(error.message)}</b>`,
-                parse_mode: PARSE_MODE
-            }, botKeyValue);
-        }
-    } finally {
-        try { await deleteFromR2(r2FileName, env); } catch(e) {}
-    }
 }
 
 export async function handleYTCommand(message, token, env, botKeyValue) {
@@ -248,7 +101,104 @@ export async function handleYTCommand(message, token, env, botKeyValue) {
         return;
     }
     
-    await processYTRequest(chatId, userId, message, input, 'video', token, env, botKeyValue);
+    const r2FileName = `yt_${userId}_${Date.now()}.mp4`;
+    let statusMsgId = null;
+    
+    try {
+        const statusResult = await tgRequest(token, 'sendMessage', {
+            chat_id: chatId,
+            text: "<b>🎬 Processing YouTube video...</b>",
+            parse_mode: PARSE_MODE
+        }, botKeyValue);
+        statusMsgId = statusResult.result?.message_id;
+        
+        let finalUrl = input;
+        let videoTitle = input;
+        let videoChannel = "YouTube";
+        
+        // Check if it's a URL or search query
+        const isUrl = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/\S+/.test(input);
+        
+        if (!isUrl) {
+            await tgRequest(token, 'editMessageText', {
+                chat_id: chatId, message_id: statusMsgId,
+                text: "<b>🔍 Searching YouTube...</b>",
+                parse_mode: PARSE_MODE
+            }, botKeyValue);
+            
+            const searchRes = await fetch(`${YT_WORKER_URL}/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: input })
+            });
+            const searchData = await searchRes.json();
+            
+            if (!searchData.success) {
+                throw new Error(searchData.error || "No results found");
+            }
+            
+            finalUrl = `https://www.youtube.com/watch?v=${searchData.videoId}`;
+            videoTitle = searchData.title;
+            videoChannel = searchData.channel || "YouTube";
+        }
+        
+        await tgRequest(token, 'editMessageText', {
+            chat_id: chatId, message_id: statusMsgId,
+            text: "<b>📥 Downloading video...</b>",
+            parse_mode: PARSE_MODE
+        }, botKeyValue);
+        
+        const downloadRes = await fetch(`${YT_WORKER_URL}/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoUrl: finalUrl, type: 'video' })
+        });
+        
+        const downloadData = await downloadRes.json();
+        
+        if (!downloadData.success || !downloadData.url) {
+            throw new Error(downloadData.error || "Could not get video URL");
+        }
+        
+        await streamToR2(downloadData.url, r2FileName, env);
+        
+        await tgRequest(token, 'editMessageText', {
+            chat_id: chatId, message_id: statusMsgId,
+            text: "<b>📤 Uploading to Telegram...</b>",
+            parse_mode: PARSE_MODE
+        }, botKeyValue);
+        
+        const user = message.from || {};
+        const safeName = escapeHTML(user.first_name || "User");
+        
+        const caption = `<b>🎥 Title:</b> <code>${escapeHTML(downloadData.title || videoTitle)}</code>\n` +
+                        `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
+                        `<b>🎤 Channel:</b> ${escapeHTML(videoChannel)}\n` +
+                        `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
+                        `<b>🔗 Source:</b> <a href="${finalUrl}">Watch on YouTube</a>\n` +
+                        `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
+                        `<b>Downloaded By:</b> <a href="tg://user?id=${userId}">${safeName}</a>`;
+        
+        const sendResult = await sendVideoFromR2(chatId, r2FileName, caption, token, botKeyValue, env);
+        
+        if (sendResult.ok) {
+            await tgRequest(token, 'deleteMessage', { chat_id: chatId, message_id: statusMsgId }, botKeyValue);
+        } else {
+            throw new Error(sendResult.description || "Telegram refused the file");
+        }
+        
+    } catch (error) {
+        console.error("[handleYTCommand] Error:", error);
+        if (statusMsgId) {
+            await tgRequest(token, 'editMessageText', {
+                chat_id: chatId, message_id: statusMsgId,
+                text: `<b>❌ ${escapeHTML(error.message)}</b>`,
+                parse_mode: PARSE_MODE
+            }, botKeyValue);
+        }
+    } finally {
+        await deleteFromR2(r2FileName, env);
+    }
 }
 
 export async function handleSongCommand(message, token, env, botKeyValue) {
@@ -271,5 +221,101 @@ export async function handleSongCommand(message, token, env, botKeyValue) {
         return;
     }
     
-    await processYTRequest(chatId, userId, message, input, 'audio', token, env, botKeyValue);
+    const r2FileName = `song_${userId}_${Date.now()}.mp3`;
+    let statusMsgId = null;
+    
+    try {
+        const statusResult = await tgRequest(token, 'sendMessage', {
+            chat_id: chatId,
+            text: "<b>🎵 Processing audio...</b>",
+            parse_mode: PARSE_MODE
+        }, botKeyValue);
+        statusMsgId = statusResult.result?.message_id;
+        
+        let finalUrl = input;
+        let audioTitle = input;
+        let audioChannel = "YouTube";
+        
+        const isUrl = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/\S+/.test(input);
+        
+        if (!isUrl) {
+            await tgRequest(token, 'editMessageText', {
+                chat_id: chatId, message_id: statusMsgId,
+                text: "<b>🔍 Searching...</b>",
+                parse_mode: PARSE_MODE
+            }, botKeyValue);
+            
+            const searchRes = await fetch(`${YT_WORKER_URL}/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: input })
+            });
+            const searchData = await searchRes.json();
+            
+            if (!searchData.success) {
+                throw new Error(searchData.error || "No results found");
+            }
+            
+            finalUrl = `https://www.youtube.com/watch?v=${searchData.videoId}`;
+            audioTitle = searchData.title;
+            audioChannel = searchData.channel || "YouTube";
+        }
+        
+        await tgRequest(token, 'editMessageText', {
+            chat_id: chatId, message_id: statusMsgId,
+            text: "<b>📥 Downloading audio...</b>",
+            parse_mode: PARSE_MODE
+        }, botKeyValue);
+        
+        const downloadRes = await fetch(`${YT_WORKER_URL}/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoUrl: finalUrl, type: 'audio' })
+        });
+        
+        const downloadData = await downloadRes.json();
+        
+        if (!downloadData.success || !downloadData.url) {
+            throw new Error(downloadData.error || "Could not get audio URL");
+        }
+        
+        await streamToR2(downloadData.url, r2FileName, env);
+        
+        await tgRequest(token, 'editMessageText', {
+            chat_id: chatId, message_id: statusMsgId,
+            text: "<b>📤 Uploading to Telegram...</b>",
+            parse_mode: PARSE_MODE
+        }, botKeyValue);
+        
+        const user = message.from || {};
+        const safeName = escapeHTML(user.first_name || "User");
+        
+        const caption = `<b>🎵 Title:</b> <code>${escapeHTML(downloadData.title || audioTitle)}</code>\n` +
+                        `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
+                        `<b>🎤 Channel:</b> ${escapeHTML(audioChannel)}\n` +
+                        `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
+                        `<b>🔗 Source:</b> <a href="${finalUrl}">Listen on YouTube</a>\n` +
+                        `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n` +
+                        `<b>Downloaded By:</b> <a href="tg://user?id=${userId}">${safeName}</a>`;
+        
+        const sendResult = await sendAudioFromR2(chatId, r2FileName, caption, downloadData.title || audioTitle, audioChannel, token, botKeyValue, env);
+        
+        if (sendResult.ok) {
+            await tgRequest(token, 'deleteMessage', { chat_id: chatId, message_id: statusMsgId }, botKeyValue);
+        } else {
+            throw new Error(sendResult.description || "Telegram refused the file");
+        }
+        
+    } catch (error) {
+        console.error("[handleSongCommand] Error:", error);
+        if (statusMsgId) {
+            await tgRequest(token, 'editMessageText', {
+                chat_id: chatId, message_id: statusMsgId,
+                text: `<b>❌ ${escapeHTML(error.message)}</b>`,
+                parse_mode: PARSE_MODE
+            }, botKeyValue);
+        }
+    } finally {
+        await deleteFromR2(r2FileName, env);
+    }
 }
