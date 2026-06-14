@@ -1,4 +1,4 @@
-// tikDownloader.js - USING ORIGINAL API METADATA
+// tikDownloader.js
 
 import { sendMessage } from './telegramApiHelpers.js';
 
@@ -153,7 +153,6 @@ export async function handleTikTokCommand(message, token, env, botKeyValue) {
         captionText += `<b>❤️ Likes:</b> ${formatNumber(stats.likes)} Likes\n`;
         captionText += `<b>🔄 Shares:</b> ${formatNumber(stats.shares)} Shares\n`;
         captionText += `<b>💬 Comments:</b> ${formatNumber(stats.comments)} Comments\n`;
-        captionText += `<b>⏱️ Duration:</b> ${duration}\n`;
         captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
         captionText += `<b>🔗 Source:</b> <a href="${url}">Watch On TikTok</a>\n`;
         captionText += `<b>━━━━━━━━━━━━━━━━━━━━━</b>\n`;
