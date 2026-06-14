@@ -2,7 +2,7 @@
 
 import { sendMessage } from './telegramApiHelpers.js';
 
-const YT_WORKER_URL = "https://yt-api.mycontrol-bot2.workers.dev"; // Change to your worker URL
+const YT_WORKER_URL = "https://yt-api.mycontrol-bot2.workers.dev/yt/dl?url"; // Change to your worker URL
 const PARSE_MODE = 'HTML';
 
 function escapeHTML(text = '') {
